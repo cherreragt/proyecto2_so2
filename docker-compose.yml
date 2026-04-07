@@ -1,0 +1,60 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: poi_db
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./app/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - poi_network
+
+  app:
+    build: ./app
+    container_name: poi_app
+    restart: always
+    env_file:
+      - .env
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DB}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      APP_PORT: ${APP_PORT}
+    expose:
+      - "8000"
+    networks:
+      - poi_network
+
+  proxy:
+    build: ./nginx
+    container_name: poi_proxy
+    restart: always
+    depends_on:
+      - app
+    ports:
+      - "${NGINX_PORT}:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - poi_network
+
+volumes:
+  postgres_data:
+
+networks:
+  poi_network:
+    driver: bridge

@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Puntos de Interés</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Sistema de Registro de Puntos de Interés</h1>
+        <p class="subtitle">Vista servida por FastAPI y consumo de API con AJAX</p>
+
+        <div class="grid">
+            <section class="card">
+                <h2>Registrar nuevo punto</h2>
+                <form id="pointForm">
+                    <label>Nombre</label>
+                    <input type="text" id="name" required>
+
+                    <label>Descripción</label>
+                    <textarea id="description" required></textarea>
+
+                    <label>Categoría</label>
+                    <select id="category" required>
+                        <option value="cultural">Cultural</option>
+                        <option value="gastronomico">Gastronómico</option>
+                        <option value="natural">Natural</option>
+                        <option value="servicio">Servicio</option>
+                        <option value="incidente">Incidente</option>
+                    </select>
+
+                    <label>Latitud</label>
+                    <input type="number" step="any" id="latitude" required>
+
+                    <label>Longitud</label>
+                    <input type="number" step="any" id="longitude" required>
+
+                    <button type="submit">Guardar punto</button>
+                </form>
+
+                <div id="formMessage" class="message"></div>
+            </section>
+
+            <section class="card">
+                <h2>Filtrar por categoría</h2>
+                <label>Categoría</label>
+                <select id="filterCategory">
+                    <option value="">Todas</option>
+                    <option value="cultural">Cultural</option>
+                    <option value="gastronomico">Gastronómico</option>
+                    <option value="natural">Natural</option>
+                    <option value="servicio">Servicio</option>
+                    <option value="incidente">Incidente</option>
+                </select>
+
+                <button id="filterButton" type="button">Filtrar</button>
+                <button id="clearFilterButton" type="button">Quitar filtro</button>
+            </section>
+
+            <section class="card">
+                <h2>Búsqueda por proximidad</h2>
+                <form id="nearbyForm">
+                    <label>Latitud</label>
+                    <input type="number" step="any" id="searchLat" required>
+
+                    <label>Longitud</label>
+                    <input type="number" step="any" id="searchLon" required>
+
+                    <label>Radio (metros)</label>
+                    <input type="number" step="any" id="searchRadius" required>
+
+                    <button type="submit">Buscar cercanos</button>
+                </form>
+            </section>
+        </div>
+
+        <section class="card">
+            <h2>Listado de puntos</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Categoría</th>
+                        <th>Latitud</th>
+                        <th>Longitud</th>
+                    </tr>
+                </thead>
+                <tbody id="pointsTableBody"></tbody>
+            </table>
+        </section>
+
+        <section class="card">
+            <h2>Resultados por proximidad</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Nombre</th>
+                        <th>Descripción</th>
+                        <th>Categoría</th>
+                        <th>Latitud</th>
+                        <th>Longitud</th>
+                        <th>Distancia (m)</th>
+                    </tr>
+                </thead>
+                <tbody id="nearbyTableBody"></tbody>
+            </table>
+        </section>
+    </div>
+
+    <script>
+        const pointsTableBody = document.getElementById("pointsTableBody");
+        const nearbyTableBody = document.getElementById("nearbyTableBody");
+        const pointForm = document.getElementById("pointForm");
+        const nearbyForm = document.getElementById("nearbyForm");
+        const filterCategory = document.getElementById("filterCategory");
+        const filterButton = document.getElementById("filterButton");
+        const clearFilterButton = document.getElementById("clearFilterButton");
+        const formMessage = document.getElementById("formMessage");
+
+        function renderPoints(points) {
+            pointsTableBody.innerHTML = "";
+
+            if (!points.length) {
+                pointsTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6">No hay puntos registrados.</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            points.forEach(point => {
+                pointsTableBody.innerHTML += `
+                    <tr>
+                        <td>${point.id}</td>
+                        <td>${point.name}</td>
+                        <td>${point.description}</td>
+                        <td>${point.category}</td>
+                        <td>${point.latitude}</td>
+                        <td>${point.longitude}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        function renderNearbyPoints(points) {
+            nearbyTableBody.innerHTML = "";
+
+            if (!points.length) {
+                nearbyTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7">No se encontraron puntos dentro del radio indicado.</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            points.forEach(point => {
+                nearbyTableBody.innerHTML += `
+                    <tr>
+                        <td>${point.id}</td>
+                        <td>${point.name}</td>
+                        <td>${point.description}</td>
+                        <td>${point.category}</td>
+                        <td>${point.latitude}</td>
+                        <td>${point.longitude}</td>
+                        <td>${point.distance_meters}</td>
+                    </tr>
+                `;
+            });
+        }
+
+        async function loadPoints(category = "") {
+            try {
+                let url = "/api/points";
+                if (category) {
+                    url += `?category=${encodeURIComponent(category)}`;
+                }
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error("Error al cargar puntos");
+                }
+
+                const data = await response.json();
+                renderPoints(data);
+            } catch (error) {
+                pointsTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6">Error cargando puntos.</td>
+                    </tr>
+                `;
+                console.error(error);
+            }
+        }
+
+        pointForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const payload = {
+                name: document.getElementById("name").value,
+                description: document.getElementById("description").value,
+                category: document.getElementById("category").value,
+                latitude: parseFloat(document.getElementById("latitude").value),
+                longitude: parseFloat(document.getElementById("longitude").value)
+            };
+
+            try {
+                const response = await fetch("/api/points", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error("No se pudo guardar el punto");
+                }
+
+                const data = await response.json();
+                formMessage.textContent = `Punto creado correctamente. ID: ${data.id}`;
+                formMessage.className = "message success";
+
+                pointForm.reset();
+                await loadPoints(filterCategory.value);
+            } catch (error) {
+                formMessage.textContent = "Error al guardar el punto.";
+                formMessage.className = "message error";
+                console.error(error);
+            }
+        });
+
+        nearbyForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const lat = document.getElementById("searchLat").value;
+            const lon = document.getElementById("searchLon").value;
+            const radius = document.getElementById("searchRadius").value;
+
+            try {
+                const response = await fetch(
+                    `/api/points/nearby?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&radius=${encodeURIComponent(radius)}`
+                );
+
+                if (!response.ok) {
+                    throw new Error("No se pudo realizar la búsqueda");
+                }
+
+                const data = await response.json();
+                renderNearbyPoints(data);
+            } catch (error) {
+                nearbyTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="7">Error en búsqueda por proximidad.</td>
+                    </tr>
+                `;
+                console.error(error);
+            }
+        });
+
+        filterButton.addEventListener("click", async () => {
+            await loadPoints(filterCategory.value);
+        });
+
+        clearFilterButton.addEventListener("click", async () => {
+            filterCategory.value = "";
+            await loadPoints();
+        });
+
+        loadPoints();
+    </script>
+</body>
+</html>
