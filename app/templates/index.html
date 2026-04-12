@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <title>Puntos de Interés</title>
     <link rel="stylesheet" href="/static/styles.css">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 </head>
 <body>
     <div class="container">
@@ -75,6 +78,14 @@
         </div>
 
         <section class="card">
+            <h2>Mapa de puntos</h2>
+            <div id="map"></div>
+            <p class="map-help">
+                El mapa muestra los puntos registrados.
+            </p>
+        </section>
+
+        <section class="card">
             <h2>Listado de puntos</h2>
             <table>
                 <thead>
@@ -110,6 +121,9 @@
         </section>
     </div>
 
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
     <script>
         const pointsTableBody = document.getElementById("pointsTableBody");
         const nearbyTableBody = document.getElementById("nearbyTableBody");
@@ -119,6 +133,29 @@
         const filterButton = document.getElementById("filterButton");
         const clearFilterButton = document.getElementById("clearFilterButton");
         const formMessage = document.getElementById("formMessage");
+
+        let map = null;
+        let markersLayer = null;
+
+        function initMap() {
+            try {
+                if (typeof L === "undefined") {
+                    console.error("Leaflet no cargó.");
+                    return;
+                }
+
+                map = L.map("map").setView([14.6349, -90.5069], 11);
+
+                L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                    maxZoom: 19,
+                    attribution: "&copy; OpenStreetMap contributors"
+                }).addTo(map);
+
+                markersLayer = L.layerGroup().addTo(map);
+            } catch (error) {
+                console.error("Error inicializando el mapa:", error);
+            }
+        }
 
         function renderPoints(points) {
             pointsTableBody.innerHTML = "";
@@ -173,6 +210,41 @@
             });
         }
 
+        function renderMap(points) {
+            if (!map || !markersLayer) return;
+
+            markersLayer.clearLayers();
+
+            if (!points.length) {
+                map.setView([14.6349, -90.5069], 11);
+                return;
+            }
+
+            const bounds = [];
+
+            points.forEach(point => {
+                const lat = Number(point.latitude);
+                const lon = Number(point.longitude);
+
+                if (Number.isNaN(lat) || Number.isNaN(lon)) return;
+
+                const marker = L.marker([lat, lon]).bindPopup(`
+                    <strong>${point.name}</strong><br>
+                    ${point.description}<br>
+                    <strong>Categoría:</strong> ${point.category}
+                `);
+
+                marker.addTo(markersLayer);
+                bounds.push([lat, lon]);
+            });
+
+            if (bounds.length === 1) {
+                map.setView(bounds[0], 15);
+            } else if (bounds.length > 1) {
+                map.fitBounds(bounds, { padding: [30, 30] });
+            }
+        }
+
         async function loadPoints(category = "") {
             try {
                 let url = "/api/points";
@@ -187,13 +259,14 @@
 
                 const data = await response.json();
                 renderPoints(data);
+                renderMap(data);
             } catch (error) {
+                console.error("Error cargando puntos:", error);
                 pointsTableBody.innerHTML = `
                     <tr>
                         <td colspan="6">Error cargando puntos.</td>
                     </tr>
                 `;
-                console.error(error);
             }
         }
 
@@ -211,9 +284,7 @@
             try {
                 const response = await fetch("/api/points", {
                     method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
+                    headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload)
                 });
 
@@ -224,13 +295,13 @@
                 const data = await response.json();
                 formMessage.textContent = `Punto creado correctamente. ID: ${data.id}`;
                 formMessage.className = "message success";
-
                 pointForm.reset();
+
                 await loadPoints(filterCategory.value);
             } catch (error) {
+                console.error("Error guardando punto:", error);
                 formMessage.textContent = "Error al guardar el punto.";
                 formMessage.className = "message error";
-                console.error(error);
             }
         });
 
@@ -252,13 +323,14 @@
 
                 const data = await response.json();
                 renderNearbyPoints(data);
+                renderMap(data);
             } catch (error) {
+                console.error("Error en búsqueda por proximidad:", error);
                 nearbyTableBody.innerHTML = `
                     <tr>
                         <td colspan="7">Error en búsqueda por proximidad.</td>
                     </tr>
                 `;
-                console.error(error);
             }
         });
 
@@ -271,6 +343,7 @@
             await loadPoints();
         });
 
+        initMap();
         loadPoints();
     </script>
 </body>
