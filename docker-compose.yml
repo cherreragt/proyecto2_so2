@@ -1,60 +1,115 @@
-version: "3.9"
+version: "3.9"  # Versión del formato de Docker Compose
 
 services:
+
+  # =========================
+  # Servicio de Base de Datos
+  # =========================
   db:
-    image: postgis/postgis:16-3.4
-    container_name: poi_db
-    restart: always
+    image: postgis/postgis:16-3.4  # Imagen oficial de PostgreSQL con extensión PostGIS
+    container_name: poi_db         # Nombre del contenedor
+    restart: always                # Reinicia automáticamente si falla
+
+    # Carga variables de entorno desde archivo .env
     env_file:
       - .env
+
+    # Variables necesarias para inicializar PostgreSQL
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}           # Nombre de la base de datos
+      POSTGRES_USER: ${POSTGRES_USER}       # Usuario
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD} # Contraseña
+
+    # Expone el puerto hacia el host (opcional, útil para pruebas)
     ports:
       - "${POSTGRES_PORT}:5432"
+
+    # Volúmenes:
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Volumen persistente para no perder datos al reiniciar contenedores
+
       - ./app/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # Script SQL que se ejecuta automáticamente al iniciar por primera vez
+      # (creación de tablas, extensión PostGIS, datos iniciales)
+
+    # Red interna del sistema
     networks:
       - poi_network
 
+
+  # =========================
+  # Servicio de Aplicación
+  # =========================
   app:
-    build: ./app
+    build: ./app              # Construye la imagen usando el Dockerfile en /app
     container_name: poi_app
     restart: always
+
+    # Variables de entorno compartidas
     env_file:
       - .env
+
+    # Asegura que la base de datos se inicie primero
     depends_on:
       - db
+
+    # Variables para conexión a la base de datos
     environment:
-      DB_HOST: db
+      DB_HOST: db                   # Nombre del servicio (resolución DNS interna)
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB}
       DB_USER: ${POSTGRES_USER}
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       APP_PORT: ${APP_PORT}
+
+    # Expone el puerto solo a la red interna (no al host)
     expose:
       - "8000"
+
     networks:
       - poi_network
 
+
+  # =========================
+  # Servicio Proxy (Nginx)
+  # =========================
   proxy:
-    build: ./nginx
+    build: ./nginx           # Construye imagen desde /nginx
     container_name: poi_proxy
     restart: always
+
+    # Espera a que la app esté disponible
     depends_on:
       - app
+
+    # Expone el servicio al exterior
     ports:
       - "${NGINX_PORT}:80"
+
+    # Monta configuración personalizada de Nginx
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # :ro = solo lectura (buena práctica de seguridad)
+
     networks:
       - poi_network
 
+
+# =========================
+# Definición de Volúmenes
+# =========================
 volumes:
   postgres_data:
+    # Volumen persistente gestionado por Docker
+    # Almacena datos físicos de PostgreSQL
 
+
+# =========================
+# Definición de Red
+# =========================
 networks:
   poi_network:
     driver: bridge
+    # Red tipo bridge (por defecto)
+    # Permite comunicación interna entre contenedores por nombre
